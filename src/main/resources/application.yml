@@ -1,0 +1,14 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: msgw-guard
+  jackson:
+    default-property-inclusion: non_null
+
+msgw:
+  guard:
+    data-dir: ./data
+    poll-interval-ms: 10000
+    dry-run: true

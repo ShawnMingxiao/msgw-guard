@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSGW 无人值守守卫</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <h1>MSGW 无人值守守卫</h1>
+        <p>IBM i · 规则化自动应答 · Spring Boot 2.7 / Java 8</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="statusChip" class="chip">加载中</span>
+      <button id="btnStart" class="btn primary">启动</button>
+      <button id="btnStop" class="btn">停止</button>
+      <button id="btnScan" class="btn accent">立即扫描</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <button data-page="overview" class="nav-item active">概览</button>
+      <button data-page="rules" class="nav-item">规则管理</button>
+      <button data-page="fixed" class="nav-item">固定回复</button>
+      <button data-page="test" class="nav-item">规则测试台</button>
+      <button data-page="audit" class="nav-item">审计日志</button>
+      <button data-page="settings" class="nav-item">设置</button>
+      <button data-page="guide" class="nav-item">接入指南</button>
+    </nav>
+
+    <main class="content">
+      <section id="page-overview" class="page active">
+        <div id="circuitBanner" class="banner hidden">
+          <strong>熔断中</strong> — 连续连接失败已达阈值，轮询已暂停。修复后请在下方点击“重置熔断”。
+          <button class="btn small" onclick="api('/guard/reset-circuit',{method:'POST'}).then(refreshAll)">重置熔断</button>
+        </div>
+        <div class="cards">
+          <div class="card"><div class="label">今日扫描</div><div class="value" id="statScans">0</div></div>
+          <div class="card"><div class="label">今日回复</div><div class="value" id="statReplies">0</div></div>
+          <div class="card"><div class="label">今日告警</div><div class="value" id="statAlerts">0</div></div>
+          <div class="card"><div class="label">今日失败</div><div class="value" id="statFailures">0</div></div>
+        </div>
+        <div class="grid2">
+          <div class="panel">
+            <div class="panel-head"><h2>当前 MSGW job</h2><button class="btn small" onclick="loadJobs()">刷新</button></div>
+            <table class="data"><thead><tr><th>Job</th><th>用户</th><th>作业号</th><th>Subsystem</th><th>状态</th></tr></thead>
+              <tbody id="jobsBody"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody></table>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>告警与提醒</h2><span id="alertCount" class="badge">0 未确认</span></div>
+            <div id="alertsList" class="alerts"><div class="muted">暂无告警</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>已停止的 job</h2>
+          <p class="muted">被 CANCEL 或按规则结束的 job 会列在这里，守卫不再处理，直到人工恢复。</p>
+          <div id="stoppedJobs"></div>
+        </div>
+        <div class="panel">
+          <h2>模拟注入（无需连接 IBM i 即可验证规则）</h2>
+          <form id="injectForm" class="form-grid">
+            <label>Job 名<input name="jobName" value="NIGHTLY_DAILY"></label>
+            <label>用户<input name="user" value="BATCH"></label>
+            <label>作业号<input name="jobNumber" value="000001"></label>
+            <label>Subsystem<input name="subsystem" value="QUSRWRK"></label>
+            <label>消息 ID<input name="messageId" value="CPA3708"></label>
+            <label class="full">消息文本<input name="text" value="Object not found in library QTEMP"></label>
+            <div class="full actions">
+              <button class="btn primary" type="submit">注入 MSGW</button>
+              <button class="btn" type="button" onclick="api('/simulator/clear',{method:'POST'}).then(loadJobs)">清空模拟器</button>
+              <span class="muted">注入后点击右上角“立即扫描”即可观察规则命中与审计。</span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="page-rules" class="page">
+        <div class="page-head">
+          <h2>规则管理</h2>
+          <div class="actions">
+            <button class="btn primary" onclick="openRuleModal()">新增规则</button>
+            <button class="btn" onclick="exportRules()">导出 JSON</button>
+            <button class="btn" onclick="document.getElementById('importFile').click()">导入 JSON</button>
+            <input id="importFile" type="file" accept=".json" class="hidden" onchange="importRules(this)">
+          </div>
+        </div>
+        <p class="muted">规则按优先级从小到大依次匹配，第一条命中的规则生效。回复内容全部来自规则或设置，不硬编码。</p>
+        <table class="data"><thead><tr><th>优先级</th><th>名称</th><th>作用域</th><th>匹配</th><th>模式</th><th>关键字</th><th>动作</th><th>回复</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="rulesBody"></tbody></table>
+      </section>
+
+      <section id="page-fixed" class="page">
+        <div class="page-head">
+          <h2>固定回复</h2>
+          <button class="btn primary" onclick="openRuleModal('JOB')">新增固定回复规则</button>
+        </div>
+        <p class="muted">指定 job（支持 * 和 ? 通配）后，无论消息内容是什么，都按规则回复固定内容。</p>
+        <table class="data"><thead><tr><th>优先级</th><th>规则名</th><th>Job 模式</th><th>User</th><th>Subsystem</th><th>动作</th><th>回复</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="fixedBody"></tbody></table>
+      </section>
+
+      <section id="page-test" class="page">
+        <h2>规则测试台</h2>
+        <p class="muted">输入一段模拟消息，实时查看会命中哪条规则、回复什么内容。此页面不会向 IBM i 发送任何指令。</p>
+        <form id="testForm" class="form-grid">
+          <label>Job 名<input name="jobName" value="NIGHTLY_DAILY"></label>
+          <label>用户<input name="user" value="BATCH"></label>
+          <label>Subsystem<input name="subsystem" value="QUSRWRK"></label>
+          <label>消息 ID<input name="messageId" value="CPA3708"></label>
+          <label class="full">消息文本<textarea name="text" rows="3">Object not found in library QTEMP</textarea></label>
+          <div class="full"><button class="btn primary" type="submit">试算规则</button></div>
+        </form>
+        <div id="testResult" class="result hidden"></div>
+      </section>
+
+      <section id="page-audit" class="page">
+        <div class="page-head"><h2>审计日志</h2><button class="btn danger" onclick="clearAudit()">清空</button></div>
+        <form id="auditFilter" class="filter-bar">
+          <label>Job 包含<input name="job" placeholder="例如 NIGHTLY"></label>
+          <label>动作<select name="action"><option value="">全部</option><option>IGNORE</option><option>CANCEL</option><option>RETRY</option><option>CUSTOM</option><option>ALERT_ONLY</option><option>END_JOB</option></select></label>
+          <button class="btn" type="submit">筛选</button>
+        </form>
+        <table class="data"><thead><tr><th>时间</th><th>Job</th><th>消息</th><th>决策</th><th>执行结果</th><th>告警</th><th>理由 / 错误</th></tr></thead>
+          <tbody id="auditBody"></tbody></table>
+      </section>
+
+      <section id="page-settings" class="page">
+        <h2>设置</h2>
+        <form id="settingsForm" class="form-grid">
+          <h3 class="full">IBM i 连接</h3>
+          <label>适配器<select name="adapter"><option value="simulator">simulator（本地模拟）</option><option value="jt400">jt400（JTOpen 生产连接）</option></select></label>
+          <label>服务器地址<input name="ibmiHost" placeholder="例如 10.0.0.10 或 ibmi.example.com"></label>
+          <label>登录用户<input name="ibmiUser" placeholder="服务账号"></label>
+          <label>密码<input name="ibmiPassword" type="password" placeholder="仅保存，不回显"></label>
+          <label>监控的 subsystem<input name="ibmiSubsystem" placeholder="例如 QUSRWRK；留空表示全部"></label>
+          <label class="full">消息队列路径模板<input name="messageQueuePathTemplate" value="/QSYS.LIB/{job}.MSGQ"><span class="hint">支持 {job} / {user} / {number} 占位符</span></label>
+          <div class="full actions"><button class="btn" type="button" onclick="testConnection()">测试连接</button><span id="connResult" class="muted"></span></div>
+
+          <h3 class="full">运行策略</h3>
+          <label>轮询间隔（毫秒）<input name="pollIntervalMs" type="number" min="1000" value="10000"></label>
+          <label>最大重试次数<input name="maxRetries" type="number" min="1" value="3"></label>
+          <label>熔断阈值（连续失败次数）<input name="failureThreshold" type="number" min="1" value="5"></label>
+          <label>默认动作<select name="defaultAction"><option>ALERT_ONLY</option><option>IGNORE</option><option>CANCEL</option><option>RETRY</option></select></label>
+          <label class="check"><input name="dryRun" type="checkbox"> Dry-run（只决策不回复，首次上线请保持开启）</label>
+          <label class="check"><input name="allowDestructive" type="checkbox"> 允许按规则结束 job（END_JOB 总开关）</label>
+
+          <h3 class="full">回复内容配置</h3>
+          <label>IGNORE 回复内容<input name="ignoreReply" value="I"></label>
+          <label>CANCEL 回复内容<input name="cancelReply" value="C"></label>
+          <label>RETRY 回复内容<input name="retryReply" value="R"></label>
+          <label>默认回复内容<input name="defaultReply" value="I"></label>
+
+          <div class="full actions"><button class="btn primary" type="submit">保存设置</button></div>
+        </form>
+      </section>
+
+      <section id="page-guide" class="page">
+        <h2>接入指南</h2>
+        <div class="panel guide">
+          <h3>1. 生产接入步骤</h3>
+          <ol>
+            <li>在“设置”中选择 <code>jt400</code> 适配器，填写 IBM i 服务器地址、服务账号、密码和要监控的 subsystem。</li>
+            <li>点击“测试连接”确认可达；服务账号需具备读取 job 列表、读取消息队列、发送 reply 的权限（通常需要 *JOBCTL 及对应消息队列权限）。</li>
+            <li>保持 Dry-run 开启，用“规则测试台”和“模拟注入”验证规则命中结果。</li>
+            <li>确认规则无误后关闭 Dry-run，先选择单一低风险 job 实跑，再逐步扩大。</li>
+          </ol>
+          <h3>2. 已核对的 JTOpen API（jt400 11.2）</h3>
+          <ul>
+            <li><code>JobList.addJobSelectionCriteria(SELECTION_ACTIVE_JOB_STATUS, Job.ACTIVE_JOB_STATUS_WAIT_MESSAGE)</code> 发现 MSGW job</li>
+            <li><code>Job.getSubsystem()</code> 按 subsystem 过滤</li>
+            <li><code>MessageQueue.getMessages(...)</code> 读取待回答消息，<code>reply(messageKey, text, true)</code> 回复</li>
+            <li><code>Job.end(0)</code> 按规则结束 job（等价于 ENDJOB *IMMED）</li>
+          </ul>
+          <h3>3. 消息队列路径</h3>
+          <p>默认模板为 <code>/QSYS.LIB/{job}.MSGQ</code>。如果现场 job 的消息队列不在此位置，请在“设置”中调整模板，可用占位符 <code>{job}</code>、<code>{user}</code>、<code>{number}</code>。</p>
+          <h3>4. 启动</h3>
+          <p>本程序是普通可执行 jar：<code>java -jar msgw-guard-1.0.0.jar</code>，默认监听 <code>http://localhost:8088</code>。配置和规则保存在 jar 同目录下的 <code>data/</code> 文件夹。</p>
+          <h3>5. cancel 后行为</h3>
+          <p>按规则回复 CANCEL 后，守卫会停止处理该 job 并在“概览”页产生醒目提醒，不会自动续跑后续调度。人工确认后可在“已停止的 job”中恢复。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="ruleModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><h2 id="ruleModalTitle">新增规则</h2><button class="btn small" onclick="closeModal()">关闭</button></div>
+    <form id="ruleForm" class="form-grid">
+      <input type="hidden" name="id">
+      <label>规则名<input name="name" required></label>
+      <label>优先级<input name="priority" type="number" value="100"></label>
+      <label>作用域<select name="scope"><option value="GLOBAL">全局规则</option><option value="JOB">指定 job（固定回复）</option></select></label>
+      <label>启用<select name="enabled"><option value="true">是</option><option value="false">否</option></select></label>
+      <label>Job 模式（作用域=JOB 时）<input name="jobPattern" placeholder="例如 NIGHTLY*"></label>
+      <label>User 模式<input name="userPattern" placeholder="留空为不限"></label>
+      <label>Subsystem 模式<input name="subsystemPattern" placeholder="留空为不限"></label>
+      <label>匹配字段<select name="matchField"><option>MESSAGE_TEXT</option><option>MESSAGE_ID</option><option>JOB_NAME</option><option>USER</option><option>SUBSYSTEM</option><option>ALL_TEXT</option></select></label>
+      <label>匹配方式<select name="matcher"><option>CONTAINS</option><option>NOT_CONTAINS</option><option>EQUALS</option><option>WILDCARD</option><option>REGEX</option><option>FUZZY</option></select></label>
+      <label>匹配模式<select name="matchMode"><option>ANY</option><option>ALL</option></select></label>
+      <label class="full">关键字 / 表达式（每行一个）<textarea name="patterns" rows="3"></textarea></label>
+      <label>忽略大小写<select name="caseSensitive"><option value="false">是（忽略）</option><option value="true">否（区分）</option></select></label>
+      <label>模糊阈值（FUZZY 用）<input name="fuzzyThreshold" type="number" step="0.01" min="0" max="1" value="0.85"></label>
+      <label>动作<select name="action"><option>IGNORE</option><option>CANCEL</option><option>RETRY</option><option>CUSTOM</option><option>ALERT_ONLY</option><option>END_JOB</option></select></label>
+      <label>自定义回复（动作=CUSTOM）<input name="customReply" placeholder="例如 I / C / Y"></label>
+      <label class="full">备注<textarea name="note" rows="2"></textarea></label>
+      <div class="full actions"><button class="btn primary" type="submit">保存规则</button><button class="btn" type="button" onclick="closeModal()">取消</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
