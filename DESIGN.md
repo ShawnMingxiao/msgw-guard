@@ -227,7 +227,7 @@ public interface IbmIClient {
 
 | 适配器 | 适用场景 | 实现方式 |
 |---|---|---|
-| `jt400` | 生产（用户指定） | JTOpen 11.2：`AS400(host,user,pwd)` 连接；`JobList.addJobSelectionCriteria(JobList.SELECTION_ACTIVE_JOB_STATUS, Job.ACTIVE_JOB_STATUS_WAIT_MESSAGE)` 找 MSGW；`Job.getSubsystem()` 客户端过滤；`MessageQueue(path).getMessages(0,n)` 读消息；`reply(msg.getKey(), replyText, true)` 回复；`Job.end(0)` 结束 job |
+| `jt400` | 生产（用户指定） | 发现 job：优先使用 `QSYS2.ACTIVE_JOB_INFO(SUBSYSTEM_LIST_FILTER => '...')` + `WHERE JOB_STATUS='MSGW'` 在服务端筛选（用户已批准 SQL 方案）；SQL 不可用时回退 `JobList` + `addJobAttributeToRetrieve(Job.SUBSYSTEM)`。读消息/回复/结束仍用 JTOpen：`MessageQueue(path).getMessages(0,n)`、`reply(key, replyText, true)`、`Job.end(0)` |
 | `simulator` | 本地演练 | 内存队列 + 手工注入接口 |
 
 **已核对的真实 API（jt400 11.2，通过 javap 验证）**：
@@ -236,7 +236,8 @@ public interface IbmIClient {
 - `MessageQueue(AS400,String)`、`getMessages(int,int): QueuedMessage[]`、`reply(byte[],String,boolean)`、`setSelection(String)`
 - `QueuedMessage.getKey(): byte[]`、`getID(): String`、`getMessage(): String`、`getSeverity(): int`
 - `Job.getSubsystem(): String`、`getStatus(): String`、`end(int delay)`（0 = `*IMMED`）
-- `AS400(String host, String user, String password)`、`CommandCall.run(String)`
+- `AS400(String host, String user, String password)`、`AS400.validateSignon()`、`CommandCall.run(String)`
+- `QSYS2.ACTIVE_JOB_INFO(SUBSYSTEM_LIST_FILTER => '...')`（IBM i 7.3 文档核对）：返回列 `JOB_NAME_SHORT`、`JOB_USER`、`JOB_NUMBER`、`SUBSYSTEM`、`JOB_STATUS`；状态过滤在外层 `WHERE` 完成，不存在 `JOB_STATUS_FILTER` 参数
 
 **实现策略**：
 

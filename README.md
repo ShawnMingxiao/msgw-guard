@@ -4,7 +4,7 @@ IBM i (AS/400) 批处理 MSGw 无人值守守卫。基于 **Spring Boot 2.7.18 +
 
 ## 功能
 
-- 发现指定 subsystem 中处于 `MSGW` 状态的 job，读取其 inquiry 消息。
+- 通过 `QSYS2.ACTIVE_JOB_INFO` 在 IBM i 服务端按 subsystem 和 `MSGW` 状态筛选 job（用户已批准该方案），避免拉回全量 job 再客户端过滤；SQL 不可用时自动回退 JTOpen `JobList`。
 - 规则引擎按优先级匹配：包含 / 不包含 / 等于 / 通配 / 正则 / 模糊相似度（本地 Levenshtein，不调用 AI）。
 - 动作可配置：`IGNORE`、`CANCEL`、`RETRY`、`CUSTOM`、`ALERT_ONLY`、`END_JOB`。
 - `CANCEL` 后停止处理该 job 并产生醒目告警，等待人工确认。
@@ -46,7 +46,7 @@ java -Dmsgw.guard.data-dir=/path/to/data -jar target/msgw-guard-1.0.0.jar
 - MSGW job 数量，以及按 subsystem 过滤后剩余数量；
 - 前 20 个活动 job 的样例，用来确认 subsystem 名称。
 
-如果 MSGW 有值但过滤后为 0，检查 subsystem 配置（支持 `*` 通配，如 `QUSR*`）。详细日志见 `data/guard.log`。
+如果 MSGW 有值但过滤后为 0，检查 subsystem 配置（支持 `*` 通配，如 `QUSR*`）。详细日志见 `data/guard.log`，其中会显示本次使用的是 SQL 还是回退的 JobList。
 
 ## 上线前现场确认
 

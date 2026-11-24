@@ -180,9 +180,10 @@
             <li>默认关闭 Dry-run，守卫会自动扫描并按规则回复。如需先只读验证，可临时开启 Dry-run，用“规则测试台”和“模拟注入”观察命中结果。</li>
             <li>验证完成后务必关闭 Dry-run（概览页也有快捷按钮），否则回复不会真正发出，job 会一直停留。</li>
           </ol>
-          <h3>2. 已核对的 JTOpen API（jt400 11.2）</h3>
+          <h3>2. 已核对的查询方式（jt400 11.2）</h3>
           <ul>
-            <li><code>JobList.addJobSelectionCriteria(SELECTION_ACTIVE_JOB_STATUS, Job.ACTIVE_JOB_STATUS_WAIT_MESSAGE)</code> 发现 MSGW job</li>
+            <li>优先：<code>QSYS2.ACTIVE_JOB_INFO(SUBSYSTEM_LIST_FILTER =&gt; '...')</code> + <code>WHERE JOB_STATUS = 'MSGW'</code>，在服务端按 subsystem 筛选，避免拉回全量 job。</li>
+            <li>回退：<code>JobList.addJobSelectionCriteria(SELECTION_ACTIVE_JOB_STATUS, Job.ACTIVE_JOB_STATUS_WAIT_MESSAGE)</code> + <code>addJobAttributeToRetrieve(Job.SUBSYSTEM)</code>，仅当 SQL 不可用时使用。</li>
             <li><code>Job.getSubsystem()</code> 按 subsystem 过滤</li>
             <li><code>MessageQueue.getMessages(...)</code> 读取待回答消息，<code>reply(messageKey, text, true)</code> 回复</li>
             <li><code>Job.end(0)</code> 按规则结束 job（等价于 ENDJOB *IMMED）</li>
