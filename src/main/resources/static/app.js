@@ -45,6 +45,7 @@ function renderStatus(s) {
   document.getElementById('statAlerts').textContent = s.todayAlerts;
   document.getElementById('statFailures').textContent = s.todayFailures;
   document.getElementById('circuitBanner').classList.toggle('hidden', !s.circuitOpen);
+  document.getElementById('dryRunBanner').classList.toggle('hidden', !s.dryRun);
   const stopped = document.getElementById('stoppedJobs');
   stopped.innerHTML = s.stoppedJobs.length === 0
     ? '<span class="muted">无</span>'
@@ -89,6 +90,14 @@ async function ackAlert(id) {
 
 async function resumeJob(jobKey) {
   await api('/guard/jobs/resume', { method: 'POST', body: { jobKey: jobKey } });
+  await refreshAll();
+}
+
+async function disableDryRun() {
+  const settings = await api('/settings');
+  settings.dryRun = false;
+  await api('/settings', { method: 'PUT', body: settings });
+  await api('/guard/scan', { method: 'POST' });
   await refreshAll();
 }
 

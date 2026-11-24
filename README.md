@@ -9,7 +9,7 @@ IBM i (AS/400) 批处理 MSGw 无人值守守卫。基于 **Spring Boot 2.7.18 +
 - 动作可配置：`IGNORE`、`CANCEL`、`RETRY`、`CUSTOM`、`ALERT_ONLY`、`END_JOB`。
 - `CANCEL` 后停止处理该 job 并产生醒目告警，等待人工确认。
 - `END_JOB` 必须规则显式配置且总开关打开才执行，默认关闭。
-- 默认 `dry-run=true`，只决策不回复；未命中规则仅告警。
+- 默认自动扫描并按规则回复（`dry-run=false`）；需要只读验证时可临时开启 `dry-run`；未命中规则仅告警。
 - 内置模拟器，无需连接 IBM i 即可验证规则与全链路。
 - 内置单人使用的 Web 可视化界面。
 
@@ -41,7 +41,7 @@ java -Dmsgw.guard.data-dir=/path/to/data -jar target/msgw-guard-1.0.0.jar
 ## 上线前现场确认
 
 1. 在“设置”填入 IBM i 主机名、用户、密码和要监控的 subsystem。
-2. 先保持 `dry-run` 开启，只读观察扫描结果。
+2. 默认已关闭 `dry-run`，会自动回复；如需先只读验证，可临时开启 `dry-run`，确认规则后再关闭（概览页有快捷按钮）。
 3. 确认 job 消息队列所在库，必要时修改 `messageQueuePathTemplate`（默认 `/QSYS.LIB/{job}.MSGQ`）。
 4. 确认服务账号具备 `*JOBCTL` 及相关消息队列权限。
 5. 小范围实跑后再关闭 `dry-run`。

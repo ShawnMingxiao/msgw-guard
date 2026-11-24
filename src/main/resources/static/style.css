@@ -82,6 +82,7 @@ h3 { font-size: 14px; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .banner { background: #fdecec; border: 1px solid #f6b8b8; color: #9f1d1d; padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; }
+#dryRunBanner { background: #fff7e6; border-color: #f5d08a; color: #8a5a00; }
 .badge { background: #fef3c7; color: #92400e; padding: 3px 10px; border-radius: 999px; font-size: 12px; }
 
 table.data { width: 100%; border-collapse: collapse; font-size: 13px; }

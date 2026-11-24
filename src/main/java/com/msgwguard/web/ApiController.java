@@ -188,6 +188,7 @@ public class ApiController {
     public Map<String, Object> saveSettings(@RequestBody Settings settings) {
         store.saveSettings(settings);
         clientFactory.invalidate();
+        guard.clearDryRunSeen();
         guard.restartWithNewInterval();
         return ok();
     }

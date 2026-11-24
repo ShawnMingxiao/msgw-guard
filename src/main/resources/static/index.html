@@ -41,6 +41,10 @@
           <strong>熔断中</strong> — 连续连接失败已达阈值，轮询已暂停。修复后请在下方点击“重置熔断”。
           <button class="btn small" onclick="api('/guard/reset-circuit',{method:'POST'}).then(refreshAll)">重置熔断</button>
         </div>
+        <div id="dryRunBanner" class="banner hidden">
+          <strong>Dry-run 已开启</strong> — 守卫正在自动扫描并按规则决策，但不会发送回复，所以 MSGW job 会一直停留。关闭后即可自动回复。
+          <button class="btn small" onclick="disableDryRun()">关闭 Dry-run 并自动回复</button>
+        </div>
         <div class="cards">
           <div class="card"><div class="label">今日扫描</div><div class="value" id="statScans">0</div></div>
           <div class="card"><div class="label">今日回复</div><div class="value" id="statReplies">0</div></div>
@@ -75,7 +79,7 @@
             <div class="full actions">
               <button class="btn primary" type="submit">注入 MSGW</button>
               <button class="btn" type="button" onclick="api('/simulator/clear',{method:'POST'}).then(loadJobs)">清空模拟器</button>
-              <span class="muted">注入后点击右上角“立即扫描”即可观察规则命中与审计。</span>
+              <span class="muted">注入后守卫会自动轮询并按规则处理，无需手动扫描；审计日志可查看命中结果。</span>
             </div>
           </form>
         </div>
@@ -148,7 +152,7 @@
           <label>最大重试次数<input name="maxRetries" type="number" min="1" value="3"></label>
           <label>熔断阈值（连续失败次数）<input name="failureThreshold" type="number" min="1" value="5"></label>
           <label>默认动作<select name="defaultAction"><option>ALERT_ONLY</option><option>IGNORE</option><option>CANCEL</option><option>RETRY</option></select></label>
-          <label class="check"><input name="dryRun" type="checkbox"> Dry-run（只决策不回复，首次上线请保持开启）</label>
+          <label class="check"><input name="dryRun" type="checkbox"> Dry-run（只扫描和决策，不发送回复；关闭后才会自动回复）</label>
           <label class="check"><input name="allowDestructive" type="checkbox"> 允许按规则结束 job（END_JOB 总开关）</label>
 
           <h3 class="full">回复内容配置</h3>
@@ -168,8 +172,8 @@
           <ol>
             <li>在“设置”中选择 <code>jt400</code> 适配器，填写 IBM i 服务器地址、服务账号、密码和要监控的 subsystem。</li>
             <li>点击“测试连接”确认可达；服务账号需具备读取 job 列表、读取消息队列、发送 reply 的权限（通常需要 *JOBCTL 及对应消息队列权限）。</li>
-            <li>保持 Dry-run 开启，用“规则测试台”和“模拟注入”验证规则命中结果。</li>
-            <li>确认规则无误后关闭 Dry-run，先选择单一低风险 job 实跑，再逐步扩大。</li>
+            <li>默认关闭 Dry-run，守卫会自动扫描并按规则回复。如需先只读验证，可临时开启 Dry-run，用“规则测试台”和“模拟注入”观察命中结果。</li>
+            <li>验证完成后务必关闭 Dry-run（概览页也有快捷按钮），否则回复不会真正发出，job 会一直停留。</li>
           </ol>
           <h3>2. 已核对的 JTOpen API（jt400 11.2）</h3>
           <ul>

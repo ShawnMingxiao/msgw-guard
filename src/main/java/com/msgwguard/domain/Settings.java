@@ -4,7 +4,7 @@ public class Settings {
 
     public String adapter = "simulator";
     public int pollIntervalMs = 10000;
-    public boolean dryRun = true;
+    public boolean dryRun = false;
     public String defaultAction = Rule.Action.ALERT_ONLY.name();
     public String defaultReply = "I";
     public String ignoreReply = "I";

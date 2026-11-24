@@ -11,4 +11,4 @@ msgw:
   guard:
     data-dir: ./data
     poll-interval-ms: 10000
-    dry-run: true
+    dry-run: false

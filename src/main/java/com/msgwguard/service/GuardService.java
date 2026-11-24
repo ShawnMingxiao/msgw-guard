@@ -45,6 +45,7 @@ public class GuardService {
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
 
     private final Set<String> processed = ConcurrentHashMap.newKeySet();
+    private final Set<String> dryRunSeen = ConcurrentHashMap.newKeySet();
     private final Set<String> stoppedJobs = ConcurrentHashMap.newKeySet();
     private final Map<String, Object> jobLocks = new ConcurrentHashMap<String, Object>();
     private final List<Alert> alertList = new CopyOnWriteArrayList<Alert>();
@@ -144,6 +145,7 @@ public class GuardService {
         synchronized (lock) {
             long started = System.currentTimeMillis();
             AuditRecord audit = new AuditRecord();
+            boolean skipAudit = false;
             audit.id = UUID.randomUUID().toString();
             audit.timestamp = Time.now();
             audit.job = job.key();
@@ -164,6 +166,11 @@ public class GuardService {
                     audit.decision = "ALREADY_PROCESSED";
                     return;
                 }
+                // Dry-run 只记录一次决策，不写入 processed；关闭 dry-run 后同一条消息仍会被真正处理。
+                if (settings.dryRun && dryRunSeen.contains(idempotencyKey)) {
+                    skipAudit = true;
+                    return;
+                }
 
                 Decision decision = engine.decide(store.loadRules(), settings, job, message);
                 audit.decision = decision.action;
@@ -171,6 +178,7 @@ public class GuardService {
                 if (settings.dryRun) {
                     audit.executionStatus = "DRY_RUN";
                     audit.reasonSafe(decision.reason);
+                    dryRunSeen.add(idempotencyKey);
                 } else if (isNoReply(decision.action)) {
                     audit.executionStatus = "ALERT";
                     audit.alert = true;
@@ -227,8 +235,10 @@ public class GuardService {
                 failures.incrementAndGet();
                 addAlert("ERROR", job.key(), "处理失败：" + error);
             } finally {
-                audit.durationMs = System.currentTimeMillis() - started;
-                store.appendAudit(audit);
+                if (!skipAudit) {
+                    audit.durationMs = System.currentTimeMillis() - started;
+                    store.appendAudit(audit);
+                }
             }
         }
     }
@@ -352,6 +362,11 @@ public class GuardService {
 
     public void clearProcessed() {
         processed.clear();
+        dryRunSeen.clear();
+    }
+
+    public void clearDryRunSeen() {
+        dryRunSeen.clear();
     }
 
     public List<JobSnapshot> currentJobs() {
