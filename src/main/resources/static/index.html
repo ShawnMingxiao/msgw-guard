@@ -145,7 +145,12 @@
           <label>密码<input name="ibmiPassword" type="password" placeholder="仅保存，不回显"></label>
           <label>监控的 subsystem<input name="ibmiSubsystem" placeholder="例如 QUSRWRK；留空表示全部"></label>
           <label class="full">消息队列路径模板<input name="messageQueuePathTemplate" value="/QSYS.LIB/{job}.MSGQ"><span class="hint">支持 {job} / {user} / {number} 占位符</span></label>
-          <div class="full actions"><button class="btn" type="button" onclick="testConnection()">测试连接</button><span id="connResult" class="muted"></span></div>
+          <div class="full actions">
+            <button class="btn" type="button" onclick="testConnection()">测试连接</button>
+            <button class="btn accent" type="button" onclick="diagnose()">诊断扫描</button>
+            <span id="connResult" class="muted"></span>
+          </div>
+          <pre id="diagnoseResult" class="diag hidden full"></pre>
 
           <h3 class="full">运行策略</h3>
           <label>轮询间隔（毫秒）<input name="pollIntervalMs" type="number" min="1000" value="10000"></label>
@@ -184,9 +189,17 @@
           </ul>
           <h3>3. 消息队列路径</h3>
           <p>默认模板为 <code>/QSYS.LIB/{job}.MSGQ</code>。如果现场 job 的消息队列不在此位置，请在“设置”中调整模板，可用占位符 <code>{job}</code>、<code>{user}</code>、<code>{number}</code>。</p>
-          <h3>4. 启动</h3>
+          <h3>4. 排查“扫描不到 job”</h3>
+          <ol>
+            <li>设置页先选对适配器 <code>jt400</code>，填完服务器/用户/密码/subsystem 后必须点“保存设置”；仅点“测试连接”不会保存。</li>
+            <li>用“诊断扫描”查看：连接是否成功、活动 job 总数、各状态分布、MSGW job 数量、subsystem 过滤后剩下的 job。</li>
+            <li>如果活动 job 总数为 0，说明该账号看不到 job 或筛选条件不对；如果 MSGW 数量为 0，说明当前确实没有处于消息等待状态的 job。</li>
+            <li>如果 MSGW 有值但过滤后为 0，检查 subsystem 是否填对（支持 <code>*</code> 通配，例如 <code>QUSR*</code>）。</li>
+            <li>日志在 <code>data/guard.log</code>，控制台也会同步输出扫描、命中和回复记录。</li>
+          </ol>
+          <h3>5. 启动</h3>
           <p>本程序是普通可执行 jar：<code>java -jar msgw-guard-1.0.0.jar</code>，默认监听 <code>http://localhost:8088</code>。配置和规则保存在 jar 同目录下的 <code>data/</code> 文件夹。</p>
-          <h3>5. cancel 后行为</h3>
+          <h3>6. cancel 后行为</h3>
           <p>按规则回复 CANCEL 后，守卫会停止处理该 job 并在“概览”页产生醒目提醒，不会自动续跑后续调度。人工确认后可在“已停止的 job”中恢复。</p>
         </div>
       </section>

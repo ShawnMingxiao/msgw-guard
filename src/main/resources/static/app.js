@@ -271,13 +271,37 @@ async function saveSettings(event) {
   } catch (e) { toast('保存失败：' + e.message); }
 }
 
+function currentFormSettings() {
+  const form = document.getElementById('settingsForm');
+  const data = Object.fromEntries(new FormData(form));
+  data.pollIntervalMs = Number(data.pollIntervalMs);
+  data.maxRetries = Number(data.maxRetries);
+  data.failureThreshold = Number(data.failureThreshold);
+  data.dryRun = form.elements.dryRun.checked;
+  data.allowDestructive = form.elements.allowDestructive.checked;
+  return data;
+}
+
 async function testConnection() {
   const out = document.getElementById('connResult');
   out.textContent = '测试中...';
   try {
-    const r = await api('/ibmi/test', { method: 'POST' });
+    // 用表单里当前填的值测试，不依赖是否已保存。
+    const r = await api('/ibmi/test', { method: 'POST', body: currentFormSettings() });
     out.textContent = r.success ? ('连接成功：' + r.description) : ('连接失败：' + (r.error || '未知错误'));
   } catch (e) { out.textContent = '连接失败：' + e.message; }
+}
+
+async function diagnose() {
+  const out = document.getElementById('diagnoseResult');
+  out.classList.remove('hidden');
+  out.textContent = '诊断中...';
+  try {
+    const r = await api('/ibmi/diagnose', { method: 'POST', body: currentFormSettings() });
+    out.textContent = JSON.stringify(r, null, 2);
+  } catch (e) {
+    out.textContent = '诊断失败：' + e.message;
+  }
 }
 
 async function inject(event) {

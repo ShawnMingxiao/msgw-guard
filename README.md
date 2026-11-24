@@ -20,7 +20,7 @@ mvn clean package
 java -jar target/msgw-guard-1.0.0.jar
 ```
 
-打开 <http://localhost:8088>。配置与审计数据默认保存在运行目录下的 `data/`，可通过启动参数覆盖：
+打开 <http://localhost:8088>。配置与审计数据默认保存在运行目录下的 `data/`，运行日志在 `data/guard.log`（同时输出到控制台），可通过启动参数覆盖：
 
 ```bash
 java -Dmsgw.guard.data-dir=/path/to/data -jar target/msgw-guard-1.0.0.jar
@@ -37,6 +37,16 @@ java -Dmsgw.guard.data-dir=/path/to/data -jar target/msgw-guard-1.0.0.jar
 | 审计日志 | 每次扫描与回复的完整记录 |
 | 设置 | 服务器、用户、密码、subsystem、消息队列模板、dry-run 等 |
 | 接入指南 | JTOpen 权限、API 说明与现场联调步骤 |
+
+## 扫描不到 job 时怎么排查
+
+在“设置”页填完连接参数后请点“保存设置”（仅“测试连接”不会保存）。然后用“诊断扫描”按钮查看：
+
+- 连接是否成功、活动 job 总数、各状态分布；
+- MSGW job 数量，以及按 subsystem 过滤后剩余数量；
+- 前 20 个活动 job 的样例，用来确认 subsystem 名称。
+
+如果 MSGW 有值但过滤后为 0，检查 subsystem 配置（支持 `*` 通配，如 `QUSR*`）。详细日志见 `data/guard.log`。
 
 ## 上线前现场确认
 

@@ -10,6 +10,7 @@ import com.msgwguard.domain.Settings;
 import com.msgwguard.engine.RuleEngine;
 import com.msgwguard.ibmi.ClientFactory;
 import com.msgwguard.ibmi.IbmIClient;
+import com.msgwguard.ibmi.Jt400Client;
 import com.msgwguard.ibmi.SimulatorClient;
 import com.msgwguard.service.GuardService;
 import com.msgwguard.store.JsonStore;
@@ -211,8 +212,9 @@ public class ApiController {
     }
 
     @PostMapping("/ibmi/test")
-    public Map<String, Object> testConnection() {
-        Settings settings = store.loadSettings();
+    public Map<String, Object> testConnection(@RequestBody(required = false) Settings body) {
+        // 传入表单当前值时测试“待保存的连接”，否则测试已保存的连接。
+        Settings settings = body == null ? store.loadSettings() : body;
         IbmIClient client = clientFactory.get(settings);
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         try {
@@ -222,6 +224,27 @@ public class ApiController {
             result.put("success", false);
             result.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
             result.put("description", client.describe());
+        }
+        return result;
+    }
+
+    @PostMapping("/ibmi/diagnose")
+    public Map<String, Object> diagnose(@RequestBody(required = false) Settings body) {
+        Settings settings = body == null ? store.loadSettings() : body;
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        try {
+            if (!"jt400".equalsIgnoreCase(settings.adapter)) {
+                result.put("adapter", settings.adapter);
+                result.put("note", "当前是模拟器适配器，不会扫描真实 IBM i。请在设置中选择 jt400 并保存。");
+                return result;
+            }
+            IbmIClient client = clientFactory.get(settings);
+            if (client instanceof Jt400Client) {
+                return ((Jt400Client) client).diagnose();
+            }
+            result.put("error", "无法创建 JTOpen 诊断客户端");
+        } catch (Exception e) {
+            result.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
         }
         return result;
     }

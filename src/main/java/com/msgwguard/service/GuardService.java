@@ -12,6 +12,8 @@ import com.msgwguard.ibmi.ClientFactory;
 import com.msgwguard.ibmi.IbmIClient;
 import com.msgwguard.store.JsonStore;
 import com.msgwguard.util.Time;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class GuardService {
+
+    private static final Logger log = LoggerFactory.getLogger(GuardService.class);
 
     @Autowired private JsonStore store;
     @Autowired private RuleEngine engine;
@@ -128,6 +132,13 @@ public class GuardService {
         try {
             List<JobSnapshot> jobs = client.listMsgwJobs();
             scans.incrementAndGet();
+            if (jobs.isEmpty()) {
+                log.info("扫描完成：未发现 MSGW job（adapter={}, subsystem={}）",
+                        settings.adapter, nullToEmpty(settings.ibmiSubsystem));
+            } else {
+                log.info("扫描完成：发现 {} 个 MSGW job（adapter={}, subsystem={}）",
+                        jobs.size(), settings.adapter, nullToEmpty(settings.ibmiSubsystem));
+            }
             for (JobSnapshot job : jobs) {
                 if (stoppedJobs.contains(job.key())) {
                     continue;
@@ -136,6 +147,7 @@ public class GuardService {
             }
             consecutiveFailures.set(0);
         } catch (Exception e) {
+            log.error("扫描 MSGW job 失败", e);
             recordFailure("扫描 MSGW job 失败", e);
         }
     }
@@ -174,6 +186,8 @@ public class GuardService {
 
                 Decision decision = engine.decide(store.loadRules(), settings, job, message);
                 audit.decision = decision.action;
+                log.info("[{}] 规则决策 action={} reply={} reason={}",
+                        job.key(), decision.action, decision.replyText, decision.reason);
 
                 if (settings.dryRun) {
                     audit.executionStatus = "DRY_RUN";
@@ -220,6 +234,7 @@ public class GuardService {
                     }, settings.maxRetries);
                     audit.executionStatus = "SUCCESS";
                     replies.incrementAndGet();
+                    log.info("[{}] 已发送回复: {}", job.key(), replyText);
                     if (Rule.Action.CANCEL.name().equals(decision.action)) {
                         stoppedJobs.add(job.key());
                         audit.alert = true;
@@ -228,6 +243,7 @@ public class GuardService {
                 }
                 processed.add(idempotencyKey);
             } catch (Exception e) {
+                log.error("[" + job.key() + "] 处理失败", e);
                 error = e.getMessage() == null ? e.toString() : e.getMessage();
                 audit.executionStatus = "FAILED";
                 audit.alert = true;
