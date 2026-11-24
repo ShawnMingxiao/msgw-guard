@@ -55,6 +55,8 @@ public class Jt400Client implements IbmIClient {
         list.addJobSelectionCriteria(JobList.SELECTION_PRIMARY_JOB_STATUS_ACTIVE, Boolean.TRUE);
         list.addJobSelectionCriteria(JobList.SELECTION_ACTIVE_JOB_STATUS,
                 Job.ACTIVE_JOB_STATUS_WAIT_MESSAGE);
+        // 让 JobList 一次性把 subsystem 属性随列表取回，避免对每个 job 单独远程调用 getSubsystem()。
+        list.addJobAttributeToRetrieve(Job.SUBSYSTEM);
         list.load();
         int length = list.getLength();
         Job[] jobs = length == 0 ? new Job[0] : list.getJobs(0, length);
@@ -67,6 +69,7 @@ public class Jt400Client implements IbmIClient {
                 continue;
             }
             JobSnapshot snapshot = new JobSnapshot(job.getName(), job.getUser(), job.getNumber(), subsystem);
+            snapshot.status = "MSGW";
             snapshot.detectedAt = Time.now();
             result.add(snapshot);
         }
