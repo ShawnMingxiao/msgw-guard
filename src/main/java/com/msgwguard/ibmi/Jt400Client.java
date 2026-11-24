@@ -27,6 +27,7 @@ public class Jt400Client implements IbmIClient {
 
     private static final Logger log = LoggerFactory.getLogger(Jt400Client.class);
     private static final int MAX_MESSAGES = 50;
+    private static final long QUEUE_RETRY_DELAY_MS = 300L;
 
     private final Settings settings;
     private final AS400 system;
@@ -149,13 +150,19 @@ public class Jt400Client implements IbmIClient {
         try {
             diagnoseViaSql(result);
             result.put("discoveryMode", "SQL (QSYS2.ACTIVE_JOB_INFO)");
-            return result;
         } catch (Exception e) {
             result.put("sqlError", describe(e));
+            diagnoseViaJobList(result);
+            result.put("discoveryMode", "JobList (SQL 失败回退)");
         }
 
-        diagnoseViaJobList(result);
-        result.put("discoveryMode", "JobList (SQL 失败回退)");
+        // 对发现的 MSGW 作业逐个探测消息队列，直接暴露 CPF2403 的实际队列路径。
+        List<JobSnapshot> msgwJobs = listMsgwJobs();
+        List<Map<String, Object>> probes = new ArrayList<Map<String, Object>>();
+        for (JobSnapshot job : msgwJobs) {
+            probes.add(probeQueue(job));
+        }
+        result.put("queueProbes", probes);
         return result;
     }
 
@@ -307,8 +314,9 @@ public class Jt400Client implements IbmIClient {
     @Override
     public InquiryMessage readInquiry(JobSnapshot job) throws Exception {
         MessageQueue queue = openQueue(job);
-        queue.setSelectMessagesNeedReply(true);
-        queue.load();
+        // MSGW 作业在“扫描发现”到“打开消息队列”之间可能已被回复/结束，
+        // 作业消息队列随作业消失，load() 抛 CPF2403。做有限重试后再判定为不可用。
+        loadQueueWithRetry(queue, job);
         int length = queue.getLength();
         if (length == 0) {
             return null;
@@ -329,6 +337,95 @@ public class Jt400Client implements IbmIClient {
         return null;
     }
 
+    /** 对 CPF2403（队列不存在）做有限重试，仍失败则抛 QueueUnavailableException。 */
+    private void loadQueueWithRetry(MessageQueue queue, JobSnapshot job) throws Exception {
+        int attempts = 3;
+        Exception last = null;
+        for (int i = 0; i < attempts; i++) {
+            try {
+                queue.load();
+                return;
+            } catch (Exception e) {
+                last = e;
+                if (!isQueueNotFound(e)) {
+                    throw e;
+                }
+                if (i < attempts - 1) {
+                    log.warn("消息队列不存在，{}ms 后重试({}/{})：job={} queue={}",
+                            QUEUE_RETRY_DELAY_MS, i + 1, attempts - 1, job.key(), queue.getPath());
+                    try {
+                        Thread.sleep(QUEUE_RETRY_DELAY_MS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        throw new QueueUnavailableException(job.key(), queue.getPath(), last);
+    }
+
+    /** CPF2403 / CPF2401 或 ObjectDoesNotExistException 都视为“队列不存在/不可访问”。 */
+    private boolean isQueueNotFound(Throwable e) {
+        if (e instanceof com.ibm.as400.access.ObjectDoesNotExistException) {
+            return true;
+        }
+        Throwable cursor = e;
+        String text = "";
+        while (cursor != null) {
+            String message = cursor.getMessage();
+            if (message != null) {
+                text += " " + message;
+            }
+            cursor = cursor.getCause();
+        }
+        return text.contains("CPF2403") || text.contains("CPF2401")
+                || text.toUpperCase().contains("NOT FOUND");
+    }
+
+    /**
+     * 只读探测：对给定作业尝试定位并打开消息队列，返回路径、是否存在、需回复消息数。
+     * 用于排查 CPF2403——直接看到底用了哪个队列路径、失败原因是什么。
+     */
+    public Map<String, Object> probeQueue(JobSnapshot job) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        result.put("job", job.key());
+        result.put("subsystem", nullToEmpty(job.subsystem));
+        String path = queuePath(job);
+        result.put("queuePath", path);
+        MessageQueue queue = null;
+        try {
+            queue = new MessageQueue(system, path);
+            queue.setSelectMessagesNeedReply(true);
+            queue.load();
+            result.put("queueExists", true);
+            result.put("needReplyCount", queue.getLength());
+        } catch (Exception e) {
+            result.put("queueExists", false);
+            result.put("error", describe(e));
+        } finally {
+            if (queue != null) {
+                try {
+                    queue.close();
+                } catch (Exception ignored) {
+                    // 只读探测，关闭失败不影响结果
+                }
+            }
+        }
+        return result;
+    }
+
+    private String queuePath(JobSnapshot job) {
+        String template = settings.messageQueuePathTemplate;
+        if (template == null || template.trim().length() == 0) {
+            template = "/QSYS.LIB/{job}.MSGQ";
+        }
+        return template
+                .replace("{job}", trimToEmpty(job.jobName))
+                .replace("{user}", trimToEmpty(job.user))
+                .replace("{number}", trimToEmpty(job.jobNumber));
+    }
+
     @Override
     public void reply(JobSnapshot job, InquiryMessage message, String replyText) throws Exception {
         byte[] key = Hex.fromHex(message == null ? null : message.messageKeyHex);
@@ -347,15 +444,7 @@ public class Jt400Client implements IbmIClient {
     }
 
     private MessageQueue openQueue(JobSnapshot job) throws Exception {
-        String template = settings.messageQueuePathTemplate;
-        if (template == null || template.trim().length() == 0) {
-            template = "/QSYS.LIB/{job}.MSGQ";
-        }
-        String path = template
-                .replace("{job}", nullToEmpty(job.jobName))
-                .replace("{user}", nullToEmpty(job.user))
-                .replace("{number}", nullToEmpty(job.jobNumber));
-        return new MessageQueue(system, path);
+        return new MessageQueue(system, queuePath(job));
     }
 
     private String configuredSubsystem() {
@@ -416,5 +505,10 @@ public class Jt400Client implements IbmIClient {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    /** SQL 的 CHAR 字段常带尾部空格，直接用会导致 IFS 路径找不到对象，必须 trim。 */
+    private String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 }

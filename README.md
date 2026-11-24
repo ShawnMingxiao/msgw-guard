@@ -52,9 +52,20 @@ java -Dmsgw.guard.data-dir=/path/to/data -jar target/msgw-guard-1.0.0.jar
 
 1. 在“设置”填入 IBM i 主机名、用户、密码和要监控的 subsystem。
 2. 默认已关闭 `dry-run`，会自动回复；如需先只读验证，可临时开启 `dry-run`，确认规则后再关闭（概览页有快捷按钮）。
-3. 确认 job 消息队列所在库，必要时修改 `messageQueuePathTemplate`（默认 `/QSYS.LIB/{job}.MSGQ`）。
+3. 确认 job 消息队列所在库，必要时修改 `messageQueuePathTemplate`（默认 `/QSYS.LIB/{job}.MSGQ`；支持 `{job}`、`{user}`、`{number}` 占位符）。
 4. 确认服务账号具备 `*JOBCTL` 及相关消息队列权限。
 5. 小范围实跑后再关闭 `dry-run`。
+
+## 关于 CPF2403 "Message queue xxx in QSYS not found"
+
+批处理作业的消息队列是随作业存在的临时对象。SQL 扫描发现某作业处于 `MSGW`，到守卫真正打开它的消息队列之间有时间差；如果作业在这期间已被回复、结束或自然完成，队列随作业消失，`MessageQueue.load()` 就抛 CPF2403。批处理调度下作业流转快，这种竞态会频繁出现。
+
+处理方式：
+
+- 守卫对 CPF2403 做有限重试（3 次，间隔 300ms）；仍不可访问则记为 `SKIPPED / QUEUE_UNAVAILABLE`，**不产生 ERROR 告警、不累计失败次数、不触发熔断**，避免错误刷屏。作业已结束，本来就无需回复，跳过是正确行为。
+- 作业名等字段从 SQL 取出后会 `trim`，避免 CHAR 字段尾部空格导致 IFS 路径打不开。
+- 用“诊断扫描”可直接看到每个 MSGW 作业实际尝试的 `queuePath`、`queueExists` 和错误原因。如果 `queueExists=false` 且错误是 CPF2403，说明模板指向的库/名称不对，按诊断里显示的路径调整 `messageQueuePathTemplate`；如果作业是短暂 MSGW 后消失，则属于正常竞态，无需处理。
+- 若队列确实存在但读不到待回复消息，检查 JTOpen 的选择条件（当前为“仅需要回复的消息”），并确认服务账号对该作业消息队列有足够权限。
 
 ## 设计文档
 

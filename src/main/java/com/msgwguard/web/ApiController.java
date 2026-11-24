@@ -228,6 +228,31 @@ public class ApiController {
         return result;
     }
 
+    /** 单个作业的消息队列探测，返回实际队列路径、是否存在、错误原因。 */
+    @PostMapping("/ibmi/probe-queue")
+    public Map<String, Object> probeQueue(@RequestBody Map<String, String> body) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        try {
+            if (!"jt400".equalsIgnoreCase(store.loadSettings().adapter)) {
+                result.put("note", "当前是模拟器适配器，探测消息队列需选择 jt400 并保存设置。");
+                return result;
+            }
+            JobSnapshot job = new JobSnapshot(
+                    value(body, "jobName", ""),
+                    value(body, "user", ""),
+                    value(body, "jobNumber", ""),
+                    value(body, "subsystem", ""));
+            IbmIClient client = clientFactory.get(store.loadSettings());
+            if (client instanceof Jt400Client) {
+                return ((Jt400Client) client).probeQueue(job);
+            }
+            result.put("error", "无法创建 JTOpen 客户端");
+        } catch (Exception e) {
+            result.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+        return result;
+    }
+
     @PostMapping("/ibmi/diagnose")
     public Map<String, Object> diagnose(@RequestBody(required = false) Settings body) {
         Settings settings = body == null ? store.loadSettings() : body;

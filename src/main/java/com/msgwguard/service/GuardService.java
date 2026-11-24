@@ -10,6 +10,7 @@ import com.msgwguard.domain.Alert;
 import com.msgwguard.engine.RuleEngine;
 import com.msgwguard.ibmi.ClientFactory;
 import com.msgwguard.ibmi.IbmIClient;
+import com.msgwguard.ibmi.QueueUnavailableException;
 import com.msgwguard.store.JsonStore;
 import com.msgwguard.util.Time;
 import org.slf4j.Logger;
@@ -242,6 +243,13 @@ public class GuardService {
                     }
                 }
                 processed.add(idempotencyKey);
+            } catch (QueueUnavailableException e) {
+                // 作业消息队列在扫描后被回复/结束而消失（CPF2403），属于正常的竞态。
+                // 不计失败、不发告警、不熔断；仅记一条 SKIPPED 审计，避免错误刷屏。
+                audit.executionStatus = "SKIPPED";
+                audit.decision = "QUEUE_UNAVAILABLE";
+                audit.reasonSafe(e.getMessage());
+                log.info("[{}] 消息队列不可访问，已跳过：{}", job.key(), e.getMessage());
             } catch (Exception e) {
                 log.error("[" + job.key() + "] 处理失败", e);
                 error = e.getMessage() == null ? e.toString() : e.getMessage();

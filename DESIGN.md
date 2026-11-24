@@ -311,6 +311,7 @@ public interface IbmIClient {
 2. **幂等**：以 `jobName + user + jobNumber + messageKey` 为键，处理过的消息不再重复回复。dry-run 只记一次决策且**不写入 processed**，关闭后同一条消息仍会被真正处理；设置变更时清空 dry-run 去重集合。
 3. **并发**：单线程轮询，回复动作走有界线程池；同一 job 加本地锁，避免并发回复同一消息。
 4. **重试与熔断**：回复失败按指数退避重试（默认 3 次）；连续连接失败达到阈值（默认 5 次）暂停轮询并告警，界面显示熔断状态。
+   - **CPF2403 特殊处理**：批处理作业消息队列随作业存在，从“扫描发现 MSGW”到“`MessageQueue.load()` 打开队列”之间作业可能已结束，队列消失导致 CPF2403（Message queue xxx in QSYS not found）。对 CPF2403/CPF2401/`ObjectDoesNotExistException` 做 3 次、间隔 300ms 的有限重试；仍失败则记为 `SKIPPED / QUEUE_UNAVAILABLE`，**不发 ERROR 告警、不累计失败次数、不触发熔断**（作业已结束本就无需回复）。SQL 取出的作业名等 CHAR 字段在拼 IFS 路径前统一 `trim`，避免尾部空格导致对象找不到。诊断扫描返回每个 MSGW 作业实际尝试的 `queuePath`、`queueExists` 与错误，便于区分“正常竞态”和“队列模板/权限配置错误”。
 5. **原子写**：规则与设置写入临时文件后 rename，避免写坏文件；审计日志 append-only。
 6. **保守默认**：规则未命中时 `ALERT_ONLY`；`END_JOB` 默认禁用，只有规则显式配置且总开关开启才执行；cancel 后停止该 job 并告警。
 7. **访问控制**：可配置 token，所有 `/api/**` 需带 token；默认仅监听内网地址。
